@@ -42,7 +42,15 @@ app.get('/', (_req, res) => {
 
 // ── Health Check ───────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
-  res.json({ success: true, status: 'ok', app: 'FLIX API', timestamp: new Date().toISOString() });
+  res.json({
+    status: 'success',
+    data: {
+      app: 'FLIX API',
+      status: 'ok',
+      timestamp: new Date().toISOString()
+    },
+    message: 'ok'
+  });
 });
 
 // ── API Routes ─────────────────────────────────────────────
