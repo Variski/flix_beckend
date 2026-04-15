@@ -1,0 +1,426 @@
+// ============================================================
+//  FLIX — Prisma Schema
+//  Converted from SQL schema (Production-Ready)
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================
+//  ENUMS
+// ============================================================
+
+enum Role {
+  user
+  moderator
+  admin
+}
+
+enum DiscussionCategory {
+  general
+  theory
+  review
+  question
+}
+
+enum LikeTargetType {
+  discussion
+  reply
+}
+
+enum NotificationType {
+  like_discussion
+  like_reply
+  reply_thread
+  nested_reply
+  watchlist_invite
+  new_follower
+}
+
+enum ReportTargetType {
+  discussion
+  reply
+  user
+}
+
+enum ReportStatus {
+  pending
+  resolved
+  rejected
+}
+
+enum WatchlistMemberRole {
+  viewer
+  editor
+}
+
+// ============================================================
+//  1. USERS
+// ============================================================
+
+model User {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  username     String    @unique @db.VarChar(50)
+  email        String    @unique @db.VarChar(255)
+  passwordHash String    @map("password_hash") @db.VarChar(255)
+  avatarUrl    String?   @map("avatar_url") @db.VarChar(500)
+  role         Role      @default(user)
+  isBanned     Boolean   @default(false) @map("is_banned")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  ratings           Rating[]
+  reviews           Review[]
+  watchlists        Watchlist[]        @relation("WatchlistOwner")
+  watchlistMembers  WatchlistMember[]
+  discussions       Discussion[]
+  replies           DiscussionReply[]
+  likes             Like[]
+  notifications     Notification[]
+  reports           Report[]           @relation("Reporter")
+  resolvedReports   Report[]           @relation("Resolver")
+  activityLogs      ActivityLog[]
+  followers         Follow[]           @relation("Following")
+  following         Follow[]           @relation("Follower")
+
+  @@map("users")
+}
+
+// ============================================================
+//  2. GENRES
+// ============================================================
+
+model Genre {
+  id   Int    @id @default(autoincrement())
+  name String @unique @db.VarChar(50)
+
+  films FilmGenre[]
+
+  @@map("genres")
+}
+
+// ============================================================
+//  3. MOODS
+// ============================================================
+
+model Mood {
+  id       Int     @id @default(autoincrement())
+  name     String  @unique @db.VarChar(50)
+  emoji    String? @db.VarChar(10)
+  colorHex String? @map("color_hex") @db.VarChar(7)
+
+  films FilmMood[]
+
+  @@map("moods")
+}
+
+// ============================================================
+//  4. FILMS
+// ============================================================
+
+model Film {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  omdbId          String?  @unique @map("omdb_id") @db.VarChar(20)
+  title           String   @db.VarChar(255)
+  releaseYear     Int?     @map("release_year") @db.SmallInt
+  posterUrl       String?  @map("poster_url") @db.VarChar(500)
+  synopsis        String?  @db.Text
+  imdbRating      Decimal? @map("imdb_rating") @db.Decimal(3, 1)
+  durationMinutes Int?     @map("duration_minutes") @db.SmallInt
+  director        String?  @db.VarChar(255)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  // Relations
+  genres          FilmGenre[]
+  moods           FilmMood[]
+  ratings         Rating[]
+  reviews         Review[]
+  discussions     Discussion[]
+  watchlistItems  WatchlistItem[]
+
+  @@map("films")
+}
+
+// ============================================================
+//  5. FILM_GENRES & FILM_MOODS
+// ============================================================
+
+model FilmGenre {
+  filmId  String @map("film_id") @db.Uuid
+  genreId Int    @map("genre_id")
+
+  film  Film  @relation(fields: [filmId], references: [id], onDelete: Cascade)
+  genre Genre @relation(fields: [genreId], references: [id], onDelete: Cascade)
+
+  @@id([filmId, genreId])
+  @@map("film_genres")
+}
+
+model FilmMood {
+  filmId String @map("film_id") @db.Uuid
+  moodId Int    @map("mood_id")
+
+  film Film @relation(fields: [filmId], references: [id], onDelete: Cascade)
+  mood Mood @relation(fields: [moodId], references: [id], onDelete: Cascade)
+
+  @@id([filmId, moodId])
+  @@map("film_moods")
+}
+
+// ============================================================
+//  6. RATINGS
+// ============================================================
+
+model Rating {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  filmId    String   @map("film_id") @db.Uuid
+  score     Int      @db.SmallInt
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  film Film @relation(fields: [filmId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, filmId])
+  @@index([filmId])
+  @@index([userId])
+  @@map("ratings")
+}
+
+// ============================================================
+//  7. REVIEWS
+// ============================================================
+
+model Review {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  filmId    String    @map("film_id") @db.Uuid
+  content   String    @db.Text
+  isSpoiler Boolean   @default(false) @map("is_spoiler")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  film Film @relation(fields: [filmId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, filmId])
+  @@index([filmId])
+  @@map("reviews")
+}
+
+// ============================================================
+//  8. WATCHLISTS
+// ============================================================
+
+model Watchlist {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ownerId   String   @map("owner_id") @db.Uuid
+  name      String   @default("My Watchlist") @db.VarChar(100)
+  isShared  Boolean  @default(false) @map("is_shared")
+  shareCode String?  @unique @map("share_code") @db.VarChar(12)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  owner   User              @relation("WatchlistOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  items   WatchlistItem[]
+  members WatchlistMember[]
+
+  @@index([ownerId])
+  @@map("watchlists")
+}
+
+model WatchlistItem {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  watchlistId String   @map("watchlist_id") @db.Uuid
+  filmId      String   @map("film_id") @db.Uuid
+  isWatched   Boolean  @default(false) @map("is_watched")
+  addedAt     DateTime @default(now()) @map("added_at")
+
+  watchlist Watchlist @relation(fields: [watchlistId], references: [id], onDelete: Cascade)
+  film      Film      @relation(fields: [filmId], references: [id], onDelete: Cascade)
+
+  @@unique([watchlistId, filmId])
+  @@map("watchlist_items")
+}
+
+model WatchlistMember {
+  watchlistId String              @map("watchlist_id") @db.Uuid
+  userId      String              @map("user_id") @db.Uuid
+  role        WatchlistMemberRole @default(viewer)
+  joinedAt    DateTime            @default(now()) @map("joined_at")
+
+  watchlist Watchlist @relation(fields: [watchlistId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([watchlistId, userId])
+  @@map("watchlist_members")
+}
+
+// ============================================================
+//  9. DISCUSSIONS
+// ============================================================
+
+model Discussion {
+  id         String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  filmId     String             @map("film_id") @db.Uuid
+  userId     String             @map("user_id") @db.Uuid
+  title      String             @db.VarChar(200)
+  body       String             @db.Text
+  category   DiscussionCategory @default(general)
+  viewsCount Int                @default(0) @map("views_count")
+  deletedAt  DateTime?          @map("deleted_at")
+  createdAt  DateTime           @default(now()) @map("created_at")
+  updatedAt  DateTime           @updatedAt @map("updated_at")
+
+  film    Film              @relation(fields: [filmId], references: [id], onDelete: Cascade)
+  user    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replies DiscussionReply[]
+  tags    DiscussionTag[]
+
+  @@index([filmId])
+  @@index([userId])
+  @@index([createdAt(sort: Desc)])
+  @@map("discussions")
+}
+
+// ============================================================
+//  10. DISCUSSION_REPLIES
+// ============================================================
+
+model DiscussionReply {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  discussionId  String    @map("discussion_id") @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  parentReplyId String?   @map("parent_reply_id") @db.Uuid
+  body          String    @db.Text
+  deletedAt     DateTime? @map("deleted_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  discussion  Discussion        @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parentReply DiscussionReply?  @relation("ReplyChildren", fields: [parentReplyId], references: [id], onDelete: Cascade)
+  children    DiscussionReply[] @relation("ReplyChildren")
+
+  @@index([discussionId])
+  @@index([parentReplyId])
+  @@map("discussion_replies")
+}
+
+// ============================================================
+//  11. DISCUSSION_TAGS
+// ============================================================
+
+model DiscussionTag {
+  discussionId String @map("discussion_id") @db.Uuid
+  tag          String @db.VarChar(50)
+
+  discussion Discussion @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+
+  @@id([discussionId, tag])
+  @@index([tag])
+  @@map("discussion_tags")
+}
+
+// ============================================================
+//  12. LIKES (Polymorphic via named relations)
+// ============================================================
+
+model Like {
+  id         String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String         @map("user_id") @db.Uuid
+  targetType LikeTargetType @map("target_type")
+  targetId   String         @map("target_id") @db.Uuid
+  createdAt  DateTime       @default(now()) @map("created_at")
+
+  // Only relate to User; target is polymorphic (discussion or reply)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, targetType, targetId])
+  @@index([targetType, targetId])
+  @@map("likes")
+}
+
+// ============================================================
+//  13. NOTIFICATIONS
+// ============================================================
+
+model Notification {
+  id        String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  type      NotificationType
+  message   String           @db.Text
+  targetUrl String?          @map("target_url") @db.Text
+  isRead    Boolean          @default(false) @map("is_read")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+// ============================================================
+//  14. REPORTS
+// ============================================================
+
+model Report {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reporterId  String           @map("reporter_id") @db.Uuid
+  targetType  ReportTargetType @map("target_type")
+  targetId    String           @map("target_id") @db.Uuid
+  reason      String           @db.Text
+  status      ReportStatus     @default(pending)
+  resolvedBy  String?          @map("resolved_by") @db.Uuid
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  reporter User  @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  resolver User? @relation("Resolver", fields: [resolvedBy], references: [id])
+
+  @@index([status])
+  @@map("reports")
+}
+
+// ============================================================
+//  15. FOLLOWS
+// ============================================================
+
+model Follow {
+  followerId  String   @map("follower_id") @db.Uuid
+  followingId String   @map("following_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  follower  User @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followingId])
+  @@index([followingId])
+  @@map("follows")
+}
+
+// ============================================================
+//  16. ACTIVITY_LOGS
+// ============================================================
+
+model ActivityLog {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  action    String   @db.Text
+  metadata  Json?    @db.JsonB
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt(sort: Desc)])
+  @@map("activity_logs")
+}
