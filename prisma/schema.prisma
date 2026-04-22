@@ -32,6 +32,22 @@ enum DiscussionCategory {
 enum LikeTargetType {
   discussion
   reply
+  cinepost
+  cinecomment
+}
+
+enum CinePostType {
+  text
+  film_review
+  film_recommendation
+  poll
+  question
+}
+
+enum CineMediaType {
+  image
+  gif
+  video
 }
 
 enum NotificationType {
@@ -41,12 +57,23 @@ enum NotificationType {
   nested_reply
   watchlist_invite
   new_follower
+  // Lama (dipertahankan agar tidak break DB yang sudah ada)
+  like_cinecomment
+  mention_cinepost
+  // CineThread baru
+  like_cinepost
+  comment_cinepost
+  repost_cinepost
+  quote_cinepost
+  reply_cinecomment
 }
 
 enum ReportTargetType {
   discussion
   reply
   user
+  cinepost
+  cinecomment
 }
 
 enum ReportStatus {
@@ -89,6 +116,11 @@ model User {
   activityLogs      ActivityLog[]
   followers         Follow[]           @relation("Following")
   following         Follow[]           @relation("Follower")
+  // CineThread
+  cinePosts         CinePost[]
+  cineComments      CineComment[]
+  cineReposts       CineRepost[]
+  cineSaves         CineSave[]
 
   @@map("users")
 }
@@ -144,6 +176,8 @@ model Film {
   reviews         Review[]
   discussions     Discussion[]
   watchlistItems  WatchlistItem[]
+  // CineThread
+  cineFilmTags    CineFilmTag[]
 
   @@map("films")
 }
@@ -423,4 +457,147 @@ model ActivityLog {
   @@index([userId])
   @@index([createdAt(sort: Desc)])
   @@map("activity_logs")
+}
+
+// ============================================================
+//  17. CINETHREAD — POSTS
+// ============================================================
+
+model CinePost {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  authorId      String       @map("author_id") @db.Uuid
+  threadRootId  String?      @map("thread_root_id") @db.Uuid
+  threadOrder   Int          @default(0) @map("thread_order") @db.SmallInt
+  postType      CinePostType @default(text) @map("post_type")
+  content       String?      @db.Text
+  viewsCount    Int          @default(0) @map("views_count")
+  deletedAt     DateTime?    @map("deleted_at")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  author      User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  threadRoot  CinePost?     @relation("ThreadChain", fields: [threadRootId], references: [id], onDelete: Cascade)
+  threadItems CinePost[]    @relation("ThreadChain")
+  media       CineMedia[]
+  filmTags    CineFilmTag[]
+  hashtags    CineHashtag[]
+  comments    CineComment[]
+  saves       CineSave[]
+  reposts     CineRepost[]  @relation("OriginalPost")
+  quoteOf     CineRepost[]  @relation("QuotedPost")
+
+  @@index([authorId])
+  @@index([threadRootId])
+  @@index([createdAt(sort: Desc)])
+  @@map("cinethread_posts")
+}
+
+// ============================================================
+//  18. CINETHREAD — MEDIA
+// ============================================================
+
+model CineMedia {
+  id        String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  postId    String        @map("post_id") @db.Uuid
+  mediaType CineMediaType @map("media_type")
+  url       String        @db.VarChar(500)
+  altText   String?       @map("alt_text") @db.VarChar(255)
+  sortOrder Int           @default(0) @map("sort_order") @db.SmallInt
+
+  post CinePost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@map("cinethread_media")
+}
+
+// ============================================================
+//  19. CINETHREAD — FILM TAGS
+// ============================================================
+
+model CineFilmTag {
+  postId String @map("post_id") @db.Uuid
+  filmId String @map("film_id") @db.Uuid
+
+  post CinePost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  film Film     @relation(fields: [filmId], references: [id], onDelete: Cascade)
+
+  @@id([postId, filmId])
+  @@map("cinethread_film_tags")
+}
+
+// ============================================================
+//  20. CINETHREAD — HASHTAGS
+// ============================================================
+
+model CineHashtag {
+  postId  String @map("post_id") @db.Uuid
+  hashtag String @db.VarChar(100)
+
+  post CinePost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@id([postId, hashtag])
+  @@index([hashtag])
+  @@map("cinethread_hashtags")
+}
+
+// ============================================================
+//  21. CINETHREAD — COMMENTS
+// ============================================================
+
+model CineComment {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  postId         String    @map("post_id") @db.Uuid
+  authorId       String    @map("author_id") @db.Uuid
+  parentCommentId String?  @map("parent_comment_id") @db.Uuid
+  content        String    @db.Text
+  deletedAt      DateTime? @map("deleted_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  post          CinePost      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author        User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parentComment CineComment?  @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
+  replies       CineComment[] @relation("CommentReplies")
+
+  @@index([postId])
+  @@index([parentCommentId])
+  @@map("cinethread_comments")
+}
+
+// ============================================================
+//  22. CINETHREAD — SAVES
+// ============================================================
+
+model CineSave {
+  userId    String   @map("user_id") @db.Uuid
+  postId    String   @map("post_id") @db.Uuid
+  savedAt   DateTime @default(now()) @map("saved_at")
+
+  user User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post CinePost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@id([userId, postId])
+  @@index([userId])
+  @@map("cinethread_saves")
+}
+
+// ============================================================
+//  23. CINETHREAD — REPOSTS
+// ============================================================
+
+model CineRepost {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  originalPostId String   @map("original_post_id") @db.Uuid
+  quotePostId    String?  @map("quote_post_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  originalPost CinePost @relation("OriginalPost", fields: [originalPostId], references: [id], onDelete: Cascade)
+  quotePost    CinePost? @relation("QuotedPost", fields: [quotePostId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, originalPostId])
+  @@index([originalPostId])
+  @@map("cinethread_reposts")
 }

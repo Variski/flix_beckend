@@ -29,6 +29,20 @@ const toggleLike = async (userId, { targetType, targetId }) => {
         data: { userId: r.userId, type: 'like_reply', message: 'Someone liked your reply', targetUrl: `/discussions` },
       });
     }
+  } else if (targetType === 'cinepost') {
+    const p = await prisma.cinePost.findUnique({ where: { id: targetId }, select: { authorId: true } });
+    if (p && p.authorId !== userId) {
+      await prisma.notification.create({
+        data: { userId: p.authorId, type: 'like_cinepost', message: 'Someone liked your CineThread post', targetUrl: `/cinethread/${targetId}` },
+      });
+    }
+  } else if (targetType === 'cinecomment') {
+    const c = await prisma.cineComment.findUnique({ where: { id: targetId }, select: { authorId: true } });
+    if (c && c.authorId !== userId) {
+      await prisma.notification.create({
+        data: { userId: c.authorId, type: 'like_cinepost', message: 'Someone liked your comment', targetUrl: `/cinethread` },
+      });
+    }
   }
 
   return { liked: true };

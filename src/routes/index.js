@@ -13,5 +13,6 @@ router.use('/notifications', require('./notification.routes'));
 router.use('/reports',       require('./report.routes'));
 router.use('/follow',        require('./follow.routes'));
 router.use('/users',         require('./user.routes'));
+router.use('/cinethread',    require('./cinethread.routes'));
 
 module.exports = router;
