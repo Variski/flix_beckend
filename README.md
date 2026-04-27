@@ -36,6 +36,7 @@
 | 🔔 **Notifikasi** | Notifikasi otomatis untuk like, follow, reply |
 | 🚨 **Sistem Laporan** | Moderasi konten oleh moderator/admin |
 | 👥 **Follow** | Social follow antar user |
+| ✉️ **Private Messaging** | Kirim pesan pribadi, request pesan, dan kirim file/attachment |
 | 📖 **Swagger UI** | Dokumentasi interaktif untuk semua endpoint |
 
 ---
@@ -286,6 +287,7 @@ flix-api/
 │   │   ├── notification.controller.js
 │   │   ├── report.controller.js
 │   │   ├── follow.controller.js
+│   │   ├── message.controller.js
 │   │   └── user.controller.js
 │   ├── services/          # Business logic & query database
 │   │   └── (sama seperti controllers)
@@ -344,6 +346,19 @@ flix-api/
 | `POST` | `/api/discussions/:id/replies` | 🔐 User | Balas diskusi |
 | `PUT` | `/api/replies/:id` | 🔐 Penulis | Edit reply |
 | `DELETE` | `/api/replies/:id` | 🔐 Penulis/Mod/Admin | Hapus reply |
+
+### Private Messaging
+| Method | Endpoint | Akses | Keterangan |
+|---|---|---|---|
+| `POST` | `/api/messages/requests` | 🔐 User | Kirim message request / auto-buat conversation jika mutual |
+| `GET` | `/api/messages/requests` | 🔐 User | List message request masuk (status pending) |
+| `PATCH` | `/api/messages/requests/:requestId` | 🔐 User | Terima (accept) atau tolak (reject) request |
+| `GET` | `/api/messages/conversations` | 🔐 User | Inbox: semua percakapan pengguna |
+| `POST` | `/api/messages/conversations` | 🔐 User | Buat percakapan baru |
+| `GET` | `/api/messages/:conversationId` | 🔐 Member | Get pesan dalam conversation (pagination) |
+| `POST` | `/api/messages/:conversationId` | 🔐 Member | Kirim pesan baru (teks/attachment) |
+| `PATCH` | `/api/messages/:conversationId/read`| 🔐 Member | Tandai semua pesan partner sudah dibaca |
+| `DELETE`| `/api/messages/:messageId` | 🔐 Sender | Hapus pesan (soft delete) |
 
 ### Likes, Watchlist, Notifications, Reports, Follow, Users
 > Lihat dokumentasi lengkap di `http://localhost:3000/api/docs`
