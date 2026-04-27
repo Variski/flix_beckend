@@ -242,6 +242,97 @@ Masukkan token di tombol **Authorize** di atas dengan format: \`Bearer <token>\`
             status: { type: 'string', enum: ['resolved', 'rejected'] },
           },
         },
+
+        // ── Messaging ────────────────────────────────────────
+        MessageAttachment: {
+          type: 'object',
+          properties: {
+            id:        { type: 'string', format: 'uuid' },
+            messageId: { type: 'string', format: 'uuid' },
+            mediaUrl:  { type: 'string', nullable: true },
+            altText:   { type: 'string', nullable: true },
+            filmId:    { type: 'string', format: 'uuid', nullable: true },
+            cinepostId:{ type: 'string', format: 'uuid', nullable: true },
+            film:      { type: 'object', nullable: true, properties: { id: { type: 'string', format: 'uuid' }, title: { type: 'string' }, posterUrl: { type: 'string', nullable: true } } },
+          },
+        },
+        Message: {
+          type: 'object',
+          properties: {
+            id:             { type: 'string', format: 'uuid' },
+            conversationId: { type: 'string', format: 'uuid' },
+            senderId:       { type: 'string', format: 'uuid' },
+            contentType:    { type: 'string', enum: ['text', 'image', 'film_tag', 'cinethread_share'] },
+            body:           { type: 'string', nullable: true },
+            status:         { type: 'string', enum: ['sent', 'delivered', 'read'] },
+            deletedAt:      { type: 'string', format: 'date-time', nullable: true },
+            createdAt:      { type: 'string', format: 'date-time' },
+            sender:         { $ref: '#/components/schemas/UserPublic' },
+            attachments:    { type: 'array', items: { $ref: '#/components/schemas/MessageAttachment' } },
+            readReceipts:   { type: 'array', items: { type: 'object', properties: { userId: { type: 'string', format: 'uuid' }, readAt: { type: 'string', format: 'date-time' } } } },
+          },
+        },
+        Conversation: {
+          type: 'object',
+          properties: {
+            id:           { type: 'string', format: 'uuid' },
+            partner:      { $ref: '#/components/schemas/UserPublic' },
+            lastMessage:  { $ref: '#/components/schemas/Message', nullable: true },
+            lastActivity: { type: 'string', format: 'date-time' },
+            unreadCount:  { type: 'integer', example: 3 },
+            createdAt:    { type: 'string', format: 'date-time' },
+          },
+        },
+        MessageRequest: {
+          type: 'object',
+          properties: {
+            id:         { type: 'string', format: 'uuid' },
+            senderId:   { type: 'string', format: 'uuid' },
+            receiverId: { type: 'string', format: 'uuid' },
+            message:    { type: 'string', nullable: true },
+            status:     { type: 'string', enum: ['pending', 'accepted', 'rejected'] },
+            createdAt:  { type: 'string', format: 'date-time' },
+            sender:     { $ref: '#/components/schemas/UserPublic' },
+          },
+        },
+        SendRequestBody: {
+          type: 'object',
+          required: ['receiverId'],
+          properties: {
+            receiverId: { type: 'string', format: 'uuid', example: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' },
+            message:    { type: 'string', maxLength: 500, example: 'Hai, boleh ngobrol?' },
+          },
+        },
+        RespondRequestBody: {
+          type: 'object',
+          required: ['action'],
+          properties: {
+            action: { type: 'string', enum: ['accept', 'reject'], example: 'accept' },
+          },
+        },
+        CreateConvBody: {
+          type: 'object',
+          required: ['partnerId'],
+          properties: {
+            partnerId: { type: 'string', format: 'uuid', example: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' },
+          },
+        },
+        SendMessageBody: {
+          type: 'object',
+          properties: {
+            contentType: { type: 'string', enum: ['text', 'image', 'film_tag', 'cinethread_share'], default: 'text' },
+            body:        { type: 'string', maxLength: 5000, example: 'Halo, apa kabar?' },
+            attachment:  {
+              type: 'object',
+              properties: {
+                mediaUrl:   { type: 'string', format: 'uri', nullable: true },
+                altText:    { type: 'string', maxLength: 200, nullable: true },
+                filmId:     { type: 'string', format: 'uuid', nullable: true },
+                cinepostId: { type: 'string', format: 'uuid', nullable: true },
+              },
+            },
+          },
+        },
       },
     },
     security: [],
@@ -259,6 +350,7 @@ Masukkan token di tombol **Authorize** di atas dengan format: \`Bearer <token>\`
       { name: 'Reports',       description: 'Sistem moderasi' },
       { name: 'Follow',        description: 'Social follow antar user' },
       { name: 'Users',         description: 'Profil & manajemen user' },
+      { name: 'Messages',      description: 'Private messaging antar user (request, conversation, pesan)' },
     ],
     paths: {
       // ── HEALTH ────────────────────────────────────────────────
@@ -725,6 +817,127 @@ Masukkan token di tombol **Authorize** di atas dengan format: \`Bearer <token>\`
           parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
           requestBody: { required: true, content: { 'application/json': { schema: { type:'object', properties: { role: { type:'string', enum:['user','moderator','admin'] } } } } } },
           responses: { 200: { description: 'Role diupdate' } },
+        },
+      },
+
+      // ── MESSAGES ──────────────────────────────────────────────
+      '/api/messages/requests': {
+        post: {
+          tags: ['Messages'],
+          summary: 'Kirim message request ke user lain',
+          description: 'Jika sudah saling follow → langsung buat conversation. Jika belum → kirim message request.',
+          security: [{ BearerAuth: [] }],
+          requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/SendRequestBody' } } } },
+          responses: {
+            201: { description: 'Request terkirim atau conversation dibuat', content: { 'application/json': { schema: { properties: { success: { type: 'boolean' }, data: { type: 'object', properties: { type: { type: 'string', enum: ['request', 'conversation'] }, data: { type: 'object' } } } } } } } },
+            400: { description: 'Tidak bisa kirim request ke diri sendiri' },
+            401: { description: 'Unauthorized' },
+            404: { description: 'User tidak ditemukan' },
+            409: { description: 'Request sudah dikirim sebelumnya' },
+          },
+        },
+        get: {
+          tags: ['Messages'],
+          summary: 'Ambil semua message request masuk (status: pending)',
+          security: [{ BearerAuth: [] }],
+          responses: {
+            200: { description: 'List message request masuk', content: { 'application/json': { schema: { properties: { success: { type: 'boolean' }, data: { type: 'array', items: { $ref: '#/components/schemas/MessageRequest' } } } } } } },
+            401: { description: 'Unauthorized' },
+          },
+        },
+      },
+      '/api/messages/requests/{requestId}': {
+        patch: {
+          tags: ['Messages'],
+          summary: 'Terima atau tolak message request',
+          security: [{ BearerAuth: [] }],
+          parameters: [{ name: 'requestId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+          requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/RespondRequestBody' } } } },
+          responses: {
+            200: { description: 'Accept → mengembalikan conversation. Reject → mengembalikan request yang diupdate.' },
+            403: { description: 'Bukan receiver dari request ini' },
+            404: { description: 'Request tidak ditemukan' },
+            409: { description: 'Request sudah di-handle sebelumnya' },
+          },
+        },
+      },
+      '/api/messages/conversations': {
+        get: {
+          tags: ['Messages'],
+          summary: 'Ambil semua conversation (inbox) milik user',
+          description: 'Diurutkan berdasarkan last_activity DESC. Termasuk info partner, last message, dan unread count.',
+          security: [{ BearerAuth: [] }],
+          responses: {
+            200: { description: 'List conversation', content: { 'application/json': { schema: { properties: { success: { type: 'boolean' }, data: { type: 'array', items: { $ref: '#/components/schemas/Conversation' } } } } } } },
+            401: { description: 'Unauthorized' },
+          },
+        },
+        post: {
+          tags: ['Messages'],
+          summary: 'Buat conversation baru atau kembalikan yang sudah ada',
+          security: [{ BearerAuth: [] }],
+          requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateConvBody' } } } },
+          responses: {
+            201: { description: 'Conversation baru dibuat atau yang sudah ada dikembalikan', content: { 'application/json': { schema: { properties: { success: { type: 'boolean' }, data: { $ref: '#/components/schemas/Conversation' } } } } } },
+            400: { description: 'Tidak bisa buat conversation dengan diri sendiri' },
+            404: { description: 'Partner tidak ditemukan' },
+          },
+        },
+      },
+      '/api/messages/{conversationId}': {
+        get: {
+          tags: ['Messages'],
+          summary: 'Ambil semua pesan dalam conversation (dengan pagination)',
+          security: [{ BearerAuth: [] }],
+          parameters: [
+            { name: 'conversationId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+            { name: 'page', in: 'query', schema: { type: 'integer', default: 1 } },
+            { name: 'limit', in: 'query', schema: { type: 'integer', default: 50, maximum: 100 } },
+          ],
+          responses: {
+            200: { description: 'List pesan dengan pagination', content: { 'application/json': { schema: { properties: { success: { type: 'boolean' }, data: { type: 'object', properties: { messages: { type: 'array', items: { $ref: '#/components/schemas/Message' } }, total: { type: 'integer' }, page: { type: 'integer' }, limit: { type: 'integer' }, hasMore: { type: 'boolean' } } } } } } } },
+            403: { description: 'Bukan member dari conversation ini' },
+            404: { description: 'Conversation tidak ditemukan' },
+          },
+        },
+        post: {
+          tags: ['Messages'],
+          summary: 'Kirim pesan baru ke conversation',
+          security: [{ BearerAuth: [] }],
+          parameters: [{ name: 'conversationId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+          requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/SendMessageBody' } } } },
+          responses: {
+            201: { description: 'Pesan terkirim', content: { 'application/json': { schema: { properties: { success: { type: 'boolean' }, data: { $ref: '#/components/schemas/Message' } } } } } },
+            400: { description: 'Body atau attachment harus ada' },
+            403: { description: 'Bukan member dari conversation ini' },
+            404: { description: 'Conversation tidak ditemukan' },
+          },
+        },
+        delete: {
+          tags: ['Messages'],
+          summary: 'Soft delete pesan (hanya sender yang bisa menghapus)',
+          description: 'Parameter path di sini adalah messageId (bukan conversationId).',
+          security: [{ BearerAuth: [] }],
+          parameters: [{ name: 'conversationId', in: 'path', required: true, description: 'messageId yang akan dihapus', schema: { type: 'string', format: 'uuid' } }],
+          responses: {
+            200: { description: 'Pesan berhasil dihapus (soft delete)' },
+            403: { description: 'Bukan pengirim pesan ini' },
+            404: { description: 'Pesan tidak ditemukan' },
+            409: { description: 'Pesan sudah dihapus sebelumnya' },
+          },
+        },
+      },
+      '/api/messages/{conversationId}/read': {
+        patch: {
+          tags: ['Messages'],
+          summary: 'Tandai semua pesan dari partner sebagai sudah dibaca',
+          security: [{ BearerAuth: [] }],
+          parameters: [{ name: 'conversationId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+          responses: {
+            200: { description: 'Read receipts berhasil dibuat', content: { 'application/json': { schema: { properties: { success: { type: 'boolean' }, data: { type: 'object', properties: { markedCount: { type: 'integer', example: 5 } } } } } } } },
+            403: { description: 'Bukan member dari conversation ini' },
+            404: { description: 'Conversation tidak ditemukan' },
+          },
         },
       },
     },

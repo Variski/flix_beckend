@@ -87,6 +87,23 @@ enum WatchlistMemberRole {
   editor
 }
 
+enum MessageStatus {
+  sent
+  delivered
+  read
+
+  @@map("MessageStatus")
+}
+
+enum MessageContentType {
+  text
+  image
+  film_tag
+  cinethread_share
+
+  @@map("MessageContentType")
+}
+
 // ============================================================
 //  1. USERS
 // ============================================================
@@ -121,6 +138,13 @@ model User {
   cineComments      CineComment[]
   cineReposts       CineRepost[]
   cineSaves         CineSave[]
+  // Messaging
+  conversationsAsOne  Conversation[]       @relation("ConvUserOne")
+  conversationsAsTwo  Conversation[]       @relation("ConvUserTwo")
+  sentMessages        Message[]            @relation("SentMessages")
+  readReceipts        MessageReadReceipt[]
+  sentRequests        MessageRequest[]     @relation("SentRequests")
+  receivedRequests    MessageRequest[]     @relation("ReceivedRequests")
 
   @@map("users")
 }
@@ -177,7 +201,9 @@ model Film {
   discussions     Discussion[]
   watchlistItems  WatchlistItem[]
   // CineThread
-  cineFilmTags    CineFilmTag[]
+  cineFilmTags        CineFilmTag[]
+  // Messaging
+  messageAttachments  MessageAttachment[]
 
   @@map("films")
 }
@@ -486,6 +512,8 @@ model CinePost {
   saves       CineSave[]
   reposts     CineRepost[]  @relation("OriginalPost")
   quoteOf     CineRepost[]  @relation("QuotedPost")
+  // Messaging
+  messageAttachments MessageAttachment[]
 
   @@index([authorId])
   @@index([threadRootId])
@@ -600,4 +628,113 @@ model CineRepost {
   @@unique([userId, originalPostId])
   @@index([originalPostId])
   @@map("cinethread_reposts")
+}
+
+// ============================================================
+//  24. MESSAGING — CONVERSATIONS
+// ============================================================
+
+model Conversation {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userOneId     String    @map("user_one_id") @db.Uuid
+  userTwoId     String    @map("user_two_id") @db.Uuid
+  lastMessageId String?   @map("last_message_id") @db.Uuid
+  lastActivity  DateTime  @default(now()) @map("last_activity")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  userOne     User      @relation("ConvUserOne", fields: [userOneId], references: [id], onDelete: Cascade)
+  userTwo     User      @relation("ConvUserTwo", fields: [userTwoId], references: [id], onDelete: Cascade)
+  lastMessage Message?  @relation("LastMessage", fields: [lastMessageId], references: [id])
+  messages    Message[] @relation("ConvMessages")
+
+  @@unique([userOneId, userTwoId])
+  @@index([userOneId])
+  @@index([userTwoId])
+  @@index([lastActivity(sort: Desc)])
+  @@map("conversations")
+}
+
+// ============================================================
+//  25. MESSAGING — MESSAGES
+// ============================================================
+
+model Message {
+  id             String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversationId String             @map("conversation_id") @db.Uuid
+  senderId       String             @map("sender_id") @db.Uuid
+  contentType    MessageContentType @default(text) @map("content_type")
+  body           String?            @db.Text
+  status         MessageStatus      @default(sent)
+  deletedAt      DateTime?          @map("deleted_at")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+
+  conversation Conversation        @relation("ConvMessages", fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User                @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  attachments  MessageAttachment[]
+  readReceipts MessageReadReceipt[]
+  lastInConv   Conversation[]      @relation("LastMessage")
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([createdAt(sort: Asc)])
+  @@map("messages")
+}
+
+// ============================================================
+//  26. MESSAGING — ATTACHMENTS
+// ============================================================
+
+model MessageAttachment {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  messageId  String   @map("message_id") @db.Uuid
+  mediaUrl   String?  @map("media_url") @db.VarChar(500)
+  altText    String?  @map("alt_text") @db.VarChar(200)
+  filmId     String?  @map("film_id") @db.Uuid
+  cinepostId String?  @map("cinepost_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  message  Message         @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  film     Film?           @relation(fields: [filmId], references: [id], onDelete: SetNull)
+  cinepost CinePost?       @relation(fields: [cinepostId], references: [id], onDelete: SetNull)
+
+  @@index([messageId])
+  @@map("message_attachments")
+}
+
+// ============================================================
+//  27. MESSAGING — READ RECEIPTS
+// ============================================================
+
+model MessageReadReceipt {
+  messageId String   @map("message_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  readAt    DateTime @default(now()) @map("read_at")
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId])
+  @@map("message_read_receipts")
+}
+
+// ============================================================
+//  28. MESSAGING — MESSAGE REQUESTS
+// ============================================================
+
+model MessageRequest {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  senderId   String   @map("sender_id") @db.Uuid
+  receiverId String   @map("receiver_id") @db.Uuid
+  message    String?  @db.Text
+  status     String   @default("pending")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  sender   User @relation("SentRequests",     fields: [senderId],   references: [id], onDelete: Cascade)
+  receiver User @relation("ReceivedRequests", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@unique([senderId, receiverId])
+  @@index([receiverId])
+  @@map("message_requests")
 }
