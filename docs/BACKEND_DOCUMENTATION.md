@@ -23,6 +23,7 @@ Backend **sudah selesai** secara fungsional mencakup semua fitur berikut:
 | Laporan Konten (Report) | ✅ |
 | Follow / Unfollow User | ✅ |
 | **CineThread** (Thread Film ala Twitter) | ✅ |
+| **Private Messaging** (Chat, Attachment, Request) | ✅ |
 
 ---
 
@@ -31,7 +32,7 @@ Backend **sudah selesai** secara fungsional mencakup semua fitur berikut:
 ```
 final_project/
 ├── prisma/
-│   ├── schema.prisma        # Skema database lengkap (26 model)
+│   ├── schema.prisma        # Skema database lengkap (31 model)
 │   └── seed.js              # Data awal (genre, mood)
 ├── src/
 │   ├── app.js               # Entry point Express + middleware global
@@ -43,9 +44,9 @@ final_project/
 │   │   ├── authorize.js     # Role-based authorization
 │   │   ├── errorHandler.js  # Global error handler
 │   │   └── validate.js      # Request body validator
-│   ├── services/            # Business logic layer (16 file)
-│   ├── controllers/         # Request handlers (16 file)
-│   └── routes/              # Express routers (14 file)
+│   ├── services/            # Business logic layer (17 file)
+│   ├── controllers/         # Request handlers (17 file)
+│   └── routes/              # Express routers (15 file)
 ├── server.js                # HTTP server start
 ├── .env                     # Environment variables
 └── package.json
@@ -75,10 +76,12 @@ postgresql://postgres:<password>@localhost:5433/flix_db
 | `ReportTargetType` | `discussion`, `reply`, `user`, `cinepost`, `cinecomment` |
 | `ReportStatus` | `pending`, `resolved`, `rejected` |
 | `WatchlistMemberRole` | `viewer`, `editor` |
+| `MessageStatus` | `sent`, `delivered`, `read` |
+| `MessageContentType` | `text`, `image`, `film_tag`, `cinethread_share` |
 
 ---
 
-### Tabel Database (26 Tabel)
+### Tabel Database (31 Tabel)
 
 #### 👤 1. `users`
 Menyimpan data akun pengguna.
@@ -450,6 +453,84 @@ Repost biasa dan quote repost.
 
 ---
 
+### 💬 Messaging Tables (5 Tabel Baru)
+
+---
+
+#### 📥 27. `conversations`
+Menyimpan obrolan antar 2 pengguna.
+
+| Kolom | Tipe | Keterangan |
+|-------|------|------------|
+| `id` | UUID PK | |
+| `user_one_id` | UUID FK → users | User 1 |
+| `user_two_id` | UUID FK → users | User 2 |
+| `last_message_id` | UUID FK → messages | Pesan terakhir |
+| `last_activity` | TIMESTAMP | Waktu terakhir aktif |
+| `created_at` | TIMESTAMP | |
+
+---
+
+#### ✉️ 28. `messages`
+Menyimpan detail pesan di dalam conversation.
+
+| Kolom | Tipe | Keterangan |
+|-------|------|------------|
+| `id` | UUID PK | |
+| `conversation_id` | UUID FK → conversations | |
+| `sender_id` | UUID FK → users | Pengirim |
+| `content_type` | MessageContentType | Jenis isi pesan |
+| `body` | TEXT | Teks pesan |
+| `status` | MessageStatus | `sent/delivered/read` |
+| `deleted_at` | TIMESTAMP | Soft delete |
+| `created_at` | TIMESTAMP | |
+| `updated_at` | TIMESTAMP | |
+
+---
+
+#### 📎 29. `message_attachments`
+Lampiran pesan (gambar, tag film, share thread).
+
+| Kolom | Tipe | Keterangan |
+|-------|------|------------|
+| `id` | UUID PK | |
+| `message_id` | UUID FK → messages | |
+| `media_url` | VARCHAR(500) | URL gambar/media |
+| `alt_text` | VARCHAR(200) | Teks alternatif |
+| `film_id` | UUID FK → films | Tag film |
+| `cinepost_id` | UUID FK → cinethread_posts | Share CinePost |
+| `created_at` | TIMESTAMP | |
+
+---
+
+#### 👀 30. `message_read_receipts`
+Status dibaca untuk pesan.
+
+| Kolom | Tipe | Keterangan |
+|-------|------|------------|
+| `message_id` | UUID FK → messages | |
+| `user_id` | UUID FK → users | |
+| `read_at` | TIMESTAMP | |
+
+`PK: (message_id, user_id)`
+
+---
+
+#### 📬 31. `message_requests`
+Permintaan obrolan sebelum disetujui.
+
+| Kolom | Tipe | Keterangan |
+|-------|------|------------|
+| `id` | UUID PK | |
+| `sender_id` | UUID FK → users | |
+| `receiver_id` | UUID FK → users | |
+| `message` | TEXT | Pesan intro |
+| `status` | VARCHAR | `pending/accept/reject` |
+| `created_at` | TIMESTAMP | |
+| `updated_at` | TIMESTAMP | |
+
+---
+
 ## 🔧 Penjelasan File Backend
 
 ### `src/app.js`
@@ -514,11 +595,12 @@ Konfigurasi Swagger/OpenAPI untuk auto-generate dokumentasi API interaktif di `/
 | `cinecomment.service.js` | `getComments`, `getReplies`, `addComment`, `replyToComment`, `deleteComment` |
 | `cinerepost.service.js` | `repost` (biasa/quote), `undoRepost` |
 | `cinesave.service.js` | `toggleSave`, `getSavedPosts` |
+| `message.service.js` | `getRequests`, `sendRequest`, `respondRequest`, `getConversations`, `createConversation`, `getMessages`, `sendMessage`, `markAsRead`, `deleteMessage` |
 
 ---
 
 ### Controllers (Request Handler Layer)
-Setiap controller menerima HTTP request, memanggil service, dan mengembalikan response standar `{ success, data }`. 16 controller total, nama sesuai service masing-masing.
+Setiap controller menerima HTTP request, memanggil service, dan mengembalikan response standar `{ success, data }`. 17 controller total, nama sesuai service masing-masing.
 
 ---
 
@@ -630,6 +712,19 @@ Setiap controller menerima HTTP request, memanggil service, dan mengembalikan re
 | POST | `/api/cinethread/:postId/repost` | ✅ | Repost / quote repost |
 | DELETE | `/api/cinethread/:postId/repost` | ✅ | Batalkan repost |
 | POST | `/api/cinethread/:postId/save` | ✅ | Toggle simpan/hapus simpan |
+
+#### ✉️ `/api/messages`
+| Method | Endpoint | Auth | Deskripsi |
+|--------|----------|------|-----------|
+| GET | `/api/messages/requests` | ✅ | Daftar message request masuk |
+| POST | `/api/messages/requests` | ✅ | Kirim message request |
+| PATCH | `/api/messages/requests/:requestId` | ✅ | Terima/tolak request |
+| GET | `/api/messages/conversations` | ✅ | Daftar percakapan (inbox) |
+| POST | `/api/messages/conversations` | ✅ | Buat percakapan baru |
+| GET | `/api/messages/:conversationId` | ✅ | Pesan dalam percakapan |
+| POST | `/api/messages/:conversationId` | ✅ | Kirim pesan ke percakapan |
+| PATCH | `/api/messages/:conversationId/read` | ✅ | Tandai pesan dibaca |
+| DELETE | `/api/messages/:messageId` | ✅ | Hapus pesan |
 
 ---
 
