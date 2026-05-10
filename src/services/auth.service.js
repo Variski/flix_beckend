@@ -8,7 +8,7 @@ const generateToken = (userId, role) => {
   });
 };
 
-const register = async ({ username, email, password }) => {
+const register = async ({ username, email, password, displayName }) => {
   const existing = await prisma.user.findFirst({
     where: { OR: [{ email }, { username }] },
   });
@@ -23,8 +23,21 @@ const register = async ({ username, email, password }) => {
   const passwordHash = await bcrypt.hash(password, 12);
 
   const user = await prisma.user.create({
-    data: { username, email, passwordHash },
-    select: { id: true, username: true, email: true, role: true, createdAt: true },
+    data: {
+      username,
+      email,
+      passwordHash,
+      displayName: displayName || username,
+    },
+    select: {
+      id: true,
+      username: true,
+      displayName: true,
+      email: true,
+      avatarUrl: true,
+      role: true,
+      createdAt: true,
+    },
   });
 
   const token = generateToken(user.id, user.role);
@@ -32,7 +45,20 @@ const register = async ({ username, email, password }) => {
 };
 
 const login = async ({ email, password }) => {
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: {
+      id: true,
+      username: true,
+      displayName: true,
+      email: true,
+      avatarUrl: true,
+      role: true,
+      isBanned: true,
+      createdAt: true,
+      passwordHash: true,
+    },
+  });
 
   if (!user) {
     const err = new Error('Invalid email or password');
@@ -62,8 +88,13 @@ const getMe = async (userId) => {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
-      id: true, username: true, email: true,
-      avatarUrl: true, role: true, createdAt: true,
+      id: true,
+      username: true,
+      displayName: true,
+      email: true,
+      avatarUrl: true,
+      role: true,
+      createdAt: true,
       _count: {
         select: {
           ratings: true, reviews: true,
