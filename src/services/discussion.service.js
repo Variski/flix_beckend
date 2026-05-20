@@ -27,7 +27,7 @@ const getDiscussionById = async (id) => {
       user: { select: { id: true, username: true, avatarUrl: true } },
       film: { select: { id: true, title: true, posterUrl: true } },
       tags: true,
-      _count: { select: { replies: true, likes: true } },
+      _count: { select: { replies: true } },
     },
   });
   if (!discussion || discussion.deletedAt) {
