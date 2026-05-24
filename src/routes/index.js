@@ -15,5 +15,6 @@ router.use('/follow',        require('./follow.routes'));
 router.use('/users',         require('./user.routes'));
 router.use('/cinethread',    require('./cinethread.routes'));
 router.use('/messages',      require('./message.routes'));
+router.use('/tmdb',          require('./tmdb.routes'));
 
 module.exports = router;
